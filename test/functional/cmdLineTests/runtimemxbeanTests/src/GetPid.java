@@ -23,20 +23,14 @@
 import java.lang.management.RuntimeMXBean;
 import java.lang.management.ManagementFactory;
 
-class GetPid extends Thread {
-
-        private static Object monitor = new Object();
- 
+class GetPid {
         public static void main(String args[]) {
-                synchronized (monitor) {
                         try {
                                 RuntimeMXBean mb = ManagementFactory.getRuntimeMXBean();
                                 long id = mb.getPid();
                                 System.out.println(id);
-                                monitor.wait(5000);
+                                Thread.sleep(5000);
                         } catch (Exception e) {
                         }
                 }
-        }
-
 }
