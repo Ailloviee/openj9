@@ -39,12 +39,11 @@ if ($^O eq 'cygwin') {
 	$javaPid = <$out>;
 	$perlPid = `wmic process where "name='java.exe'" get ProcessID`;
 	print $in "getPid finished";
+	# String trim both sides of javaPid and perlPid for the index check
 	$javaPid =~ s/^\s+|\s+$//g;
 	$perlPid =~ s/^\s+|\s+$//g;
 	if (index($perlPid, $javaPid) != -1) {
-	$perlPid = $javaPid;
-	}
-	else{
+		$perlPid = $javaPid;
 	}
 }
 else {

@@ -1,3 +1,4 @@
+
 /*******************************************************************************
  * Copyright (c) 2017, 2018 IBM Corp. and others
  *
@@ -24,14 +25,17 @@ import java.lang.management.RuntimeMXBean;
 import java.lang.management.ManagementFactory;
 
 class GetPid {
-        public static void main(String args[]) {
-                        try {
-                                RuntimeMXBean mb = ManagementFactory.getRuntimeMXBean();
-                                long id = mb.getPid();
-                                System.out.println(id);
-                                /* Puts Java process on hold until system receives output from testing script getPidTest.pl*/
-                                System.in.read();
-                        } catch (Exception e) {
-                        }
-                }
+	public static void main(String args[]) {
+		try {
+			RuntimeMXBean mb = ManagementFactory.getRuntimeMXBean();
+			long id = mb.getPid();
+			System.out.println(id);
+			/*
+			 * Puts Java process on hold until system receives output from
+			 * testing script getPidTest.pl
+			 */
+			System.in.read();
+		} catch (Exception e) {
+		}
+	}
 }
