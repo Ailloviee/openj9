@@ -29,7 +29,8 @@ class GetPid {
                                 RuntimeMXBean mb = ManagementFactory.getRuntimeMXBean();
                                 long id = mb.getPid();
                                 System.out.println(id);
-                                Thread.sleep(5000);
+                                /* Puts Java process on hold until system receives output from testing script getPidTest.pl*/
+                                System.in.read();
                         } catch (Exception e) {
                         }
                 }
