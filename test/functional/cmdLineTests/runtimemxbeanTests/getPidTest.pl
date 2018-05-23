@@ -38,6 +38,7 @@ if ($^O eq 'cygwin') {
 	open3($in, $out, $err, $javaCmd);
 	$javaPid = <$out>;
 	$perlPid = `wmic process where "name='java.exe'" get ProcessID`;
+	print $in "getPid finished";
 	$javaPid =~ s/^\s+|\s+$//g;
 	$perlPid =~ s/^\s+|\s+$//g;
 	if (index($perlPid, $javaPid) != -1) {
@@ -49,6 +50,7 @@ if ($^O eq 'cygwin') {
 else {
 	$perlPid = open3($in, $out, $err, $javaCmd);
 	$javaPid = <$out>;
+	print $in "getPid finished";
 }
 
 if ($perlPid == $javaPid) {
