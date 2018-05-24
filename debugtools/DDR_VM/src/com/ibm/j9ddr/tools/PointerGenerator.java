@@ -274,7 +274,7 @@ public class PointerGenerator {
 		File javaFile = new File(outputDir, structure.getPointerName() + ".java");
 
 		// Do not create Pointer class for Constant only structures (this includes enums)
-		if (structure.getFields().size() == 0 && structure.getConstants().size() != 0 && superClassName.equals("StructurePointer")) {
+		if (structure.getFields().size() == 0 && structure.getConstants().size() > 1 && superClassName.equals("StructurePointer")) {
 			if (javaFile.exists()) {
 				System.out.println("No fields and no superclass.  Deleting: " + structure.getName());
 				javaFile.delete();

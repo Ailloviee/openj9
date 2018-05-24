@@ -24,11 +24,18 @@ package com.ibm.j9ddr.vm29.j9;
 import static com.ibm.j9ddr.vm29.events.EventManager.raiseCorruptDataEvent;
 
 import com.ibm.j9ddr.CorruptDataException;
+import com.ibm.j9ddr.vm29.j9.gc.GCHeapRegionDescriptor;
+import com.ibm.j9ddr.vm29.j9.gc.GCHeapRegionIterator;
+import com.ibm.j9ddr.vm29.j9.gc.GCHeapRegionManager;
 import com.ibm.j9ddr.vm29.j9.gc.GCObjectModel;
+import com.ibm.j9ddr.vm29.pointer.AbstractPointer;
 import com.ibm.j9ddr.vm29.pointer.VoidPointer;
 import com.ibm.j9ddr.vm29.pointer.generated.J9ClassPointer;
 import com.ibm.j9ddr.vm29.pointer.generated.J9IndexableObjectPointer;
+import com.ibm.j9ddr.vm29.pointer.generated.J9JavaVMPointer;
 import com.ibm.j9ddr.vm29.pointer.generated.J9ObjectPointer;
+import com.ibm.j9ddr.vm29.pointer.generated.MM_GCExtensionsPointer;
+import com.ibm.j9ddr.vm29.pointer.generated.MM_HeapRegionManagerPointer;
 import com.ibm.j9ddr.vm29.types.I32;
 import com.ibm.j9ddr.vm29.types.U32;
 import com.ibm.j9ddr.vm29.types.UDATA;
@@ -361,5 +368,59 @@ public final class ObjectModel
 	public static VoidPointer getElementAddress(J9IndexableObjectPointer indexableObjectPointer, int elementIndex, int elementSize) throws CorruptDataException
 	{
 		return gcObjectModel.getElementAddress(indexableObjectPointer, elementIndex, elementSize);
+	}
+	
+	public static GCHeapRegionDescriptor findRegionForPointer(J9JavaVMPointer javaVM, GCHeapRegionManager hrm, AbstractPointer pointer, GCHeapRegionDescriptor region)
+	{
+		GCHeapRegionDescriptor regionDesc = null;
+		
+		if(region != null && region.isAddressInRegion(pointer)) {
+			return region;
+		}
+		
+		regionDesc = regionForAddress(javaVM, hrm, pointer);
+		if(null != regionDesc) {
+			return regionDesc;
+		}
+		
+		// TODO kmt : this is tragically slow
+		try {
+			GCHeapRegionIterator iterator = GCHeapRegionIterator.from();
+			while(iterator.hasNext()) {
+				regionDesc = GCHeapRegionDescriptor.fromHeapRegionDescriptor(iterator.next());
+				if(isPointerInRegion(pointer, regionDesc)) {
+					return regionDesc;
+				}
+			}
+		} catch (CorruptDataException e) {}
+		return null;
+	}
+	
+	// TODO kmt : this doesn't belong here
+	public static GCHeapRegionDescriptor regionForAddress(J9JavaVMPointer javaVM, GCHeapRegionManager hrm, AbstractPointer pointer)
+	{
+		try {
+			if(null == hrm) {
+				MM_HeapRegionManagerPointer hrmPtr = MM_GCExtensionsPointer.cast(javaVM.gcExtensions()).heapRegionManager();
+				hrm = GCHeapRegionManager.fromHeapRegionManager(hrmPtr);
+			}
+			return hrm.regionDescriptorForAddress(pointer);
+		} catch (CorruptDataException cde) {}
+		return null;
+	}
+
+	public static boolean isPointerInRegion(AbstractPointer pointer, GCHeapRegionDescriptor region)
+	{
+		return pointer.gte(region.getLowAddress()) && pointer.lt(region.getHighAddress());
+	}
+	
+	public static boolean isPointerInHeap(J9JavaVMPointer javaVM, AbstractPointer pointer)
+	{
+		if(findRegionForPointer(javaVM, null, pointer, null) != null) {
+			return true;
+		}
+		else {
+			return false;
+		}
 	}
 }

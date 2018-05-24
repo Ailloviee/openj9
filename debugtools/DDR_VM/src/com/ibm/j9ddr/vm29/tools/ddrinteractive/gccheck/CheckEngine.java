@@ -108,6 +108,11 @@ class CheckEngine
 	{
 		_javaVM = vm;
 		_reporter = reporter;
+		try {
+			/* Even if hrm is null, all helpers that use it will null check it and attempt to allocate it and handle the failure */
+			MM_HeapRegionManagerPointer hrmPtr = MM_GCExtensionsPointer.cast(_javaVM.gcExtensions()).heapRegionManager();
+			_hrm = GCHeapRegionManager.fromHeapRegionManager(hrmPtr);
+		} catch (CorruptDataException cde) {}
 	}
 	
 	public J9JavaVMPointer getJavaVM()
@@ -317,7 +322,7 @@ class CheckEngine
 		
 		if(J9BuildFlags.gc_generational) {
 			if(scavengerEnabled) {
-				GCHeapRegionDescriptor objectRegion = findRegionForPointer(object, regionDesc);
+				GCHeapRegionDescriptor objectRegion = ObjectModel.findRegionForPointer(_javaVM, _hrm, object, regionDesc);
 				if(objectRegion == null) {
 					/* should be impossible, since checkObjectIndirect() already verified that the object exists */
 					return J9MODRON_GCCHK_RC_NOT_FOUND;
@@ -359,50 +364,6 @@ class CheckEngine
 		}
 		
 		return J9MODRON_SLOT_ITERATOR_OK;		
-	}
-
-	private GCHeapRegionDescriptor findRegionForPointer(AbstractPointer pointer, GCHeapRegionDescriptor region)
-	{
-		GCHeapRegionDescriptor regionDesc = null;
-		
-		if(region != null && region.isAddressInRegion(pointer)) {
-			return region;
-		}
-		
-		regionDesc = regionForAddress(pointer);
-		if(null != regionDesc) {
-			return regionDesc;
-		}
-		
-		// TODO kmt : this is tragically slow
-		try {
-			GCHeapRegionIterator iterator = GCHeapRegionIterator.from();
-			while(iterator.hasNext()) {
-				regionDesc = GCHeapRegionDescriptor.fromHeapRegionDescriptor(iterator.next());
-				if(isPointerInRegion(pointer, regionDesc)) {
-					return regionDesc;
-				}
-			}
-		} catch (CorruptDataException e) {}
-		return null;
-	}
-	
-	// TODO kmt : this doesn't belong here
-	private GCHeapRegionDescriptor regionForAddress(AbstractPointer pointer)
-	{
-		try {
-			if(null == _hrm) {
-				MM_HeapRegionManagerPointer hrm = MM_GCExtensionsPointer.cast(_javaVM.gcExtensions()).heapRegionManager();
-				_hrm = GCHeapRegionManager.fromHeapRegionManager(hrm);
-			}
-			return _hrm.regionDescriptorForAddress(pointer);
-		} catch (CorruptDataException cde) {}
-		return null;
-	}
-
-	private boolean isPointerInRegion(AbstractPointer pointer, GCHeapRegionDescriptor region)
-	{
-		return pointer.gte(region.getLowAddress()) && pointer.lt(region.getHighAddress());
 	}
 
 	private int checkObjectIndirect(J9ObjectPointer object)
@@ -448,7 +409,7 @@ class CheckEngine
 			return J9MODRON_GCCHK_RC_OK;
 		}
 		
-		regionDesc[0] = findRegionForPointer(object, regionDesc[0]);
+		regionDesc[0] = ObjectModel.findRegionForPointer(_javaVM, _hrm, object, regionDesc[0]);
 		if(regionDesc[0] == null) {
 			/* Is the object on the stack? */
 			GCVMThreadListIterator threadListIterator = GCVMThreadListIterator.from();
@@ -494,7 +455,7 @@ class CheckEngine
 					// Replace the object and resume
 					object = newObject[0];
 
-					regionDesc[0] = findRegionForPointer(object, regionDesc[0]);
+					regionDesc[0] = ObjectModel.findRegionForPointer(_javaVM, _hrm, object, regionDesc[0]);
 					if(regionDesc[0] == null) {
 						/* Is the object on the stack? */
 						GCVMThreadListIterator threadListIterator = GCVMThreadListIterator.from();
@@ -532,7 +493,7 @@ class CheckEngine
 				// Replace the object and resume
 				object = newObject[0];
 
-				regionDesc[0] = findRegionForPointer(object, regionDesc[0]);
+				regionDesc[0] = ObjectModel.findRegionForPointer(_javaVM, _hrm, object, regionDesc[0]);
 				if(regionDesc[0] == null) {
 					return J9MODRON_GCCHK_RC_NOT_FOUND;
 				}
@@ -721,7 +682,7 @@ class CheckEngine
 			
 			/* Additional checks for the remembered set */
 			if(object.notNull()) {
-				GCHeapRegionDescriptor objectRegion = findRegionForPointer(object, null);
+				GCHeapRegionDescriptor objectRegion = ObjectModel.findRegionForPointer(_javaVM, _hrm, object, null);
 				
 				if (objectRegion == null) {
 					/* shouldn't happen, since checkObjectIndirect() already verified this object */
