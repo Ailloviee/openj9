@@ -31,7 +31,7 @@ class GetPid {
 			long id = mb.getPid();
 			System.out.println(id);
 			/*
-			 * Puts Java process on hold until system receives output from
+			 * Puts Java process on hold until system receives input from
 			 * testing script getPidTest.pl
 			 */
 			System.in.read();
