@@ -45,8 +45,7 @@ if ($^O eq 'cygwin') {
 	if (index($perlPid, $javaPid) != -1) {
 		$perlPid = $javaPid;
 	}
-}
-else {
+} else {
 	$perlPid = open3($in, $out, $err, $javaCmd);
 	$javaPid = <$out>;
 	print $in "getPid finished";
