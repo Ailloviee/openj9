@@ -29,19 +29,18 @@ import com.ibm.j9ddr.tools.ddrinteractive.BaseStructureFormatter;
 import com.ibm.j9ddr.tools.ddrinteractive.Context;
 import com.ibm.j9ddr.tools.ddrinteractive.FormatWalkResult;
 import com.ibm.j9ddr.tools.ddrinteractive.IFieldFormatter;
-import com.ibm.j9ddr.vm29.pointer.generated.J9ModulePointer;
-import com.ibm.j9ddr.vm29.pointer.helper.J9ObjectHelper;
+import com.ibm.j9ddr.vm29.pointer.generated.J9PackagePointer;
+import com.ibm.j9ddr.vm29.pointer.helper.J9UTF8Helper;
 
 /**
  * Structure Formatter that adds a suffix like this:
  * 
- * Module name: jdk.internal.jvmstat
- * To find all modules that read the module, use !findallreads 0x000001305F4795A8
- * To find all loaded classes in the module, use !dumpallclassesinmodule 0x000001305F4795A8
+ * Package name: jdk/internal/perf
+ * To dump all modules that the package is exported to, use !dumpmoduleexports 0x00000130550DB338
  * 
- * When a !j9module is formatted
+ * When a !j9package is formatted
  */
-public class J9ModuleStructureFormatter extends BaseStructureFormatter 
+public class J9PackageStructureFormatter extends BaseStructureFormatter 
 {
 
 	@Override
@@ -49,23 +48,21 @@ public class J9ModuleStructureFormatter extends BaseStructureFormatter
 			PrintStream out, Context context,
 			List<IFieldFormatter> fieldFormatters, String[] extraArgs) 
 	{
-		if (type.equalsIgnoreCase("j9module") && address != 0) {
-			J9ModulePointer modulePtr = J9ModulePointer.cast(address);
+		if (type.equalsIgnoreCase("j9package") && address != 0) {
+			J9PackagePointer packagePtr = J9PackagePointer.cast(address);
 
 			try {
-				out.println("Module name: " + J9ObjectHelper.stringValue(modulePtr.moduleName()));
+				out.println("Package name: " + J9UTF8Helper.stringValue(packagePtr.packageName()));
 			} catch (CorruptDataException e) {
 				// Do nothing
 				return FormatWalkResult.KEEP_WALKING;
 			}
-			out.println("To find all modules that read the module, use !findallreads " + modulePtr.getHexAddress());
-			out.println("To find all loaded classes in the module, use !dumpallclassesinmodule "
-					+ modulePtr.getHexAddress());
+			out.println("To dump all modules that the package is exported to, use !dumpmoduleexports "
+					+ packagePtr.getHexAddress());
 		}
-
+		
 		return FormatWalkResult.KEEP_WALKING;
 	}
 
 	
 }
-

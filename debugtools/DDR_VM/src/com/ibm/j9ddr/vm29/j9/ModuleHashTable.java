@@ -34,8 +34,9 @@ import com.ibm.j9ddr.vm29.types.UDATA;
 public class ModuleHashTable extends HashTable_V1<J9ModulePointer>
 {
 	protected ModuleHashTable(J9HashTablePointer hashTablePointer, boolean isInline, Class<J9ModulePointer> structType,
-			HashEqualFunction<J9ModulePointer> equalFn, HashFunction<J9ModulePointer> hashFn)
-			throws CorruptDataException {
+			HashEqualFunction<J9ModulePointer> equalFn,
+			HashFunction<J9ModulePointer> hashFn) throws CorruptDataException 
+	{
 		super(hashTablePointer, isInline, structType, equalFn, hashFn);
 	}
 
