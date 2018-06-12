@@ -54,3 +54,4 @@ public class JavaVersionHelper
 		return true;
 	}
 }
+
