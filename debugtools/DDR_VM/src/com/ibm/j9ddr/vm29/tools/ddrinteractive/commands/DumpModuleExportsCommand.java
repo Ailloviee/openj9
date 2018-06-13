@@ -31,10 +31,12 @@ import com.ibm.j9ddr.tools.ddrinteractive.DDRInteractiveCommandException;
 import com.ibm.j9ddr.vm29.j9.DataType;
 import com.ibm.j9ddr.vm29.j9.HashTable;
 import com.ibm.j9ddr.vm29.j9.ModuleHashTable;
+import com.ibm.j9ddr.vm29.j9.ObjectModel;
 import com.ibm.j9ddr.vm29.j9.SlotIterator;
 import com.ibm.j9ddr.vm29.pointer.generated.J9HashTablePointer;
 import com.ibm.j9ddr.vm29.pointer.generated.J9JavaVMPointer;
 import com.ibm.j9ddr.vm29.pointer.generated.J9ModulePointer;
+import com.ibm.j9ddr.vm29.pointer.generated.J9ObjectPointer;
 import com.ibm.j9ddr.vm29.pointer.generated.J9PackagePointer;
 import com.ibm.j9ddr.vm29.pointer.helper.J9ObjectHelper;
 import com.ibm.j9ddr.vm29.pointer.helper.J9RASHelper;
@@ -67,19 +69,31 @@ public class DumpModuleExportsCommand extends Command
 			int hitCount = 0;
 			if (JavaVersionHelper.ensureJava9AndUp(vm, out)) {
 				String targetPackageAddress = args[0];
-				J9PackagePointer packagePtr = J9PackagePointer.cast(Long.decode(targetPackageAddress));
-				J9HashTablePointer exportTable = packagePtr.exportsHashTable();
-				HashTable<J9ModulePointer> moduleHashTable = ModuleHashTable.fromJ9HashTable(exportTable);
-				SlotIterator<J9ModulePointer> slotIterator = moduleHashTable.iterator();
-				J9ModulePointer exportModulePtr = null;
-				while (slotIterator.hasNext()) {
-					exportModulePtr = slotIterator.next();
-					hitCount++;
-					String moduleName = J9ObjectHelper.stringValue(exportModulePtr.moduleName());
-					String hexAddress = exportModulePtr.getHexAddress();
-					out.printf("%-30s !j9module %s%n", moduleName, hexAddress);
+				J9ModulePointer checkPtr = J9ModulePointer.cast(Long.decode(targetPackageAddress));
+				J9ObjectPointer firstField = checkPtr.moduleName();
+				/*
+				 * Checks on the region and make sure that it is pointing to a
+				 * package. (For packages, the first field must not be in heap
+				 * since it is a J9UTF8 while for j9module it is a J9Object.)
+				 */
+				if (!ObjectModel.isPointerInHeap(vm, firstField)) {
+					J9PackagePointer packagePtr = J9PackagePointer.cast(Long.decode(targetPackageAddress));
+					J9HashTablePointer exportTable = packagePtr.exportsHashTable();
+					HashTable<J9ModulePointer> moduleHashTable = ModuleHashTable.fromJ9HashTable(exportTable);
+					SlotIterator<J9ModulePointer> slotIterator = moduleHashTable.iterator();
+					J9ModulePointer exportModulePtr = null;
+					while (slotIterator.hasNext()) {
+						exportModulePtr = slotIterator.next();
+						hitCount++;
+						String moduleName = J9ObjectHelper.stringValue(exportModulePtr.moduleName());
+						String hexAddress = exportModulePtr.getHexAddress();
+						out.printf("%-30s !j9module %s%n", moduleName, hexAddress);
+					}
+					out.println(String.format("Found %d module(s) that the package is exported to\n", hitCount));
+				} else {
+					CommandUtils.dbgPrint(out, "This is not a package\nUsage: !dumpmoduleexports <packageAddress>\n");
+					return;
 				}
-				out.println(String.format("Found %d module(s) that the package is exported to\n", hitCount));
 			}
 		} catch (CorruptDataException e) {
 			throw new DDRInteractiveCommandException(e);

@@ -30,9 +30,6 @@
  <variable name="DUMPFILE" value="j9core.dmp" />
  <variable name="DUMPDIR" value="dumpdir" />
  <variable name="XDUMP" value="-Xdump:system:file=$DUMPFILE$,events=vmstop" />
- 
- <!-- override the JDMPVIEW_EXE command on win32 since jdmpview.exe is failing on Windows XP - CMVC 200287 -->
- <variable name="JDMPVIEW_EXE" value="$EXE$ com.ibm.jvm.dtfjview.DTFJView" platforms="win_x86-32" />
 
  <!-- override the -Xdump command on z/OS -->
  <variable name="XDUMP" value="-Xdump:system:opts=IEATDUMP,dsn=%uid.J9CORE.DMP,events=vmstop,request=exclusive+compact" platforms="zos.*" />
@@ -146,7 +143,7 @@
                 <input>quit</input>
         </command>
   <output regex="no" type="success">!j9package 0x</output>
-  <saveoutput regex="no" type="required" saveName="packageAddr" splitIndex="1" splitBy="!j9package ">java/lang</saveoutput>
+  <saveoutput regex="no" type="required" saveName="packageAddr" splitIndex="1" splitBy="!j9package ">jdk/internal/vm </saveoutput>
   <output regex="no" type="required">sun/net</output>
   <output regex="no" type="required">java/util/stream</output>
   <output regex="no" type="failure">DDRInteractiveCommandException</output>
@@ -169,6 +166,7 @@
         </command>
   <output regex="no" type="success">Fields for J9Package:</output>
   <output regex="no" type="required">packageName</output>
+  <output regex="no" type="required">jdk/internal/vm</output>
   <output regex="no" type="required">module</output>
   <output regex="no" type="required">exportsHashTable</output>
   <output regex="no" type="failure">DDRInteractiveCommandException</output>
@@ -218,6 +216,89 @@
   <output regex="no" type="required">readAccessHashTable</output>
   <output regex="no" type="failure">DDRInteractiveCommandException</output>
   <output regex="no" type="failure">&lt;FAULT&gt;</output>
+
+ </test>
+ 
+ <test id="Run !findallreads">
+  <exec command="sh" capture="LOGNAME" platforms="zos.*" >
+    <arg>-c</arg>
+    <arg>echo $$LOGNAME</arg>
+  </exec>
+  <exec command="cp //'$LOGNAME$.J9CORE.DMP.X001' $DUMPFILE$" platforms="zos_390-64.*" />
+  <exec command="cp //'$LOGNAME$.J9CORE.DMP' $DUMPFILE$" platforms="zos_390-31.*" />
+  <exec command="tso delete J9CORE.DMP.*" platforms="zos_390-64.*" />
+  <exec command="tso delete J9CORE.DMP" platforms="zos_390-31.*" />
+        <command command="$JDMPVIEW_EXE$">
+                <arg>-core $DUMPFILE$</arg>
+                <input>!findallreads $readModuleAddr$</input>
+                <input>quit</input>
+        </command>
+  <output regex="no" type="success">!j9module 0x</output>
+  <output regex="no" type="required">java.base</output>
+  <output regex="no" type="required">Found 1 module(s)</output>
+  <output regex="no" type="failure">DDRInteractiveCommandException</output>
+
+ </test>
+ 
+ <test id="Run !dumpmoduleexports">
+  <exec command="sh" capture="LOGNAME" platforms="zos.*" >
+    <arg>-c</arg>
+    <arg>echo $$LOGNAME</arg>
+  </exec>
+  <exec command="cp //'$LOGNAME$.J9CORE.DMP.X001' $DUMPFILE$" platforms="zos_390-64.*" />
+  <exec command="cp //'$LOGNAME$.J9CORE.DMP' $DUMPFILE$" platforms="zos_390-31.*" />
+  <exec command="tso delete J9CORE.DMP.*" platforms="zos_390-64.*" />
+  <exec command="tso delete J9CORE.DMP" platforms="zos_390-31.*" />
+        <command command="$JDMPVIEW_EXE$">
+                <arg>-core $DUMPFILE$</arg>
+                <input>!dumpmoduleexports $packageAddr$</input>
+                <input>quit</input>
+        </command>
+  <output regex="no" type="success">!j9module 0x</output>
+  <output regex="no" type="required">jdk.management.agent</output>
+  <output regex="no" type="required">jdk.internal.jvmstat</output>
+  <output regex="no" type="failure">DDRInteractiveCommandException</output>
+
+ </test>
+ 
+ <test id="Run !dumpmoduleexports not a package">
+  <exec command="sh" capture="LOGNAME" platforms="zos.*" >
+    <arg>-c</arg>
+    <arg>echo $$LOGNAME</arg>
+  </exec>
+  <exec command="cp //'$LOGNAME$.J9CORE.DMP.X001' $DUMPFILE$" platforms="zos_390-64.*" />
+  <exec command="cp //'$LOGNAME$.J9CORE.DMP' $DUMPFILE$" platforms="zos_390-31.*" />
+  <exec command="tso delete J9CORE.DMP.*" platforms="zos_390-64.*" />
+  <exec command="tso delete J9CORE.DMP" platforms="zos_390-31.*" />
+        <command command="$JDMPVIEW_EXE$">
+                <arg>-core $DUMPFILE$</arg>
+                <input>!dumpmoduleexports $moduleAddr$</input>
+                <input>quit</input>
+        </command>
+  <output regex="no" type="success">This is not a package</output>
+  <output regex="no" type="required">Usage:</output>
+  <output regex="no" type="failure">DDRInteractiveCommandException</output>
+
+ </test>
+ 
+ <test id="Run !dumpallclassesinmodule">
+  <exec command="sh" capture="LOGNAME" platforms="zos.*" >
+    <arg>-c</arg>
+    <arg>echo $$LOGNAME</arg>
+  </exec>
+  <exec command="cp //'$LOGNAME$.J9CORE.DMP.X001' $DUMPFILE$" platforms="zos_390-64.*" />
+  <exec command="cp //'$LOGNAME$.J9CORE.DMP' $DUMPFILE$" platforms="zos_390-31.*" />
+  <exec command="tso delete J9CORE.DMP.*" platforms="zos_390-64.*" />
+  <exec command="tso delete J9CORE.DMP" platforms="zos_390-31.*" />
+        <command command="$JDMPVIEW_EXE$">
+                <arg>-core $DUMPFILE$</arg>
+                <input>!dumpallclassesinmodule $moduleAddr$</input>
+                <input>quit</input>
+        </command>
+  <output regex="no" type="success">!j9class 0x</output>
+  <output regex="no" type="required">java/lang</output>
+  <output regex="no" type="required">classes in java.base</output>
+  <output regex="no" type="failure">DDRInteractiveCommandException</output>
 
  </test>
  
