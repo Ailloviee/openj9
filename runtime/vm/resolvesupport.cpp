@@ -34,10 +34,13 @@
 #include "VMHelpers.hpp"
 
 #define MAX_STACK_SLOTS 255
+#define BSM_ARGUMENT_SIZE 2
+#define BSM_ARGUMENT_COUNT_OFFSET 1
+#define BSM_ARGUMENTS_OFFSET 2
 
 static void checkForDecompile(J9VMThread *currentThread, J9ROMMethodRef *romMethodRef, UDATA jitFlags);
 static bool finalFieldSetAllowed(J9VMThread *currentThread, bool isStatic, J9Method *method, J9Class *fieldClass, J9Class *callerClass, J9ROMFieldShape *field, UDATA jitFlags);
-
+static bool isCycleDetected(J9ConstantPool *ramCP, U_16 *bsmDataOriginal, U_16 *visited, U_16 cpIndex, bool *resolved, int stackIndex);
 
 /**
 * @brief In class files with version 53 or later, setting of final fields is only allowed from initializer methods.
@@ -75,7 +78,6 @@ finalFieldSetAllowed(J9VMThread *currentThread, bool isStatic, J9Method *method,
 	}
 	return legal;
 }
-
 
 /**
 * @brief Check to see if a resolved method name matches the -XXdecomp: value from the command line
@@ -1873,26 +1875,28 @@ j9object_t
 resolveConstantDynamic(J9VMThread *vmThread, J9ConstantPool *ramCP, UDATA cpIndex, UDATA resolveFlags)
 {
 	J9RAMConstantDynamicRef *ramCPEntry = (J9RAMConstantDynamicRef*)ramCP + cpIndex;
-	j9object_t value = NULL;
 	J9JavaVM *vm = vmThread->javaVM;
+	j9object_t value = NULL;
+	j9object_t cpException = NULL;
 	bool resolved = false;
 
-RETRY:
+retry:
+	value = ramCPEntry->value;
 	/* Fast path resolution for previously resolved entries */
-	if (NULL != ramCPEntry->value) {
-		value = ramCPEntry->value;
+	if (NULL != value) {
 		resolved = true;
 	} else {
+		cpException = ramCPEntry->exception;
 		/* check if already resolved to NULL or exception */
-		if (NULL != ramCPEntry->exception) {
+		if (NULL != cpException) {
 			J9Class *throwable = J9VMJAVALANGTHROWABLE_OR_NULL(vm);
-			J9Class *clazz = J9OBJECT_CLAZZ(vmThread, ramCPEntry->exception);
-			if (ramCPEntry->exception == vm->voidReflectClass->classObject) {
+			J9Class *clazz = J9OBJECT_CLAZZ(vmThread, cpException);
+			if (cpException == vm->voidReflectClass->classObject) {
 				/* Resolved with null reference */
 				resolved = true;
 			} else if (isSameOrSuperClassOf(throwable, clazz)) {
 				/* Resolved with exception */
-				VM_VMHelpers::setExceptionPending(vmThread, ramCPEntry->exception);
+				VM_VMHelpers::setExceptionPending(vmThread, cpException);
 				resolved = true;
 			}
 		}
@@ -1901,36 +1905,36 @@ RETRY:
 	if (!resolved) {
 		/* Slow path, attempt to acquire resolve mutex or retry, or wait */
 		omrthread_monitor_enter(vm->constantDynamicMutex);
-		bool retry = false;
-		if (NULL != ramCPEntry->value) {
-			retry = true;
+		value = ramCPEntry->value;
+		if (NULL != value) {
+			omrthread_monitor_exit(vm->constantDynamicMutex);
+			goto retry;
 		} else {
+			cpException = ramCPEntry->exception;
 			/* check if already resolved to NULL or exception */
-			if (NULL != ramCPEntry->exception) {
+			if (NULL != cpException) {
 				J9Class *throwable = J9VMJAVALANGTHROWABLE_OR_NULL(vm);
-				J9Class *clazz = J9OBJECT_CLAZZ(vmThread, ramCPEntry->exception);
-				if (ramCPEntry->exception == vm->voidReflectClass->classObject) {
+				J9Class *clazz = J9OBJECT_CLAZZ(vmThread, cpException);
+				if (cpException == vm->voidReflectClass->classObject) {
 					/* Resolved with null reference */
-					retry = true;
+					omrthread_monitor_exit(vm->constantDynamicMutex);
+					goto retry;
 				} else if (isSameOrSuperClassOf(throwable, clazz)) {
 					/* Resolved with exception */
-					retry = true;
-				} else if (ramCPEntry->exception != vmThread->threadObject) {
+					omrthread_monitor_exit(vm->constantDynamicMutex);
+					goto retry;
+				} else if (cpException != vmThread->threadObject) {
 					/* Another thread is currently resolving this entry */
-					// internalReleaseVMAccess(vmThread);
+					internalReleaseVMAccess(vmThread);
 					omrthread_monitor_wait(vm->constantDynamicMutex);
 					omrthread_monitor_exit(vm->constantDynamicMutex);
-					// internalAcquireVMAccess(vmThread);
-					retry = true;
+					internalAcquireVMAccess(vmThread);
+					goto retry;
 				}
 			}
 		}
-		if (retry) {
-			omrthread_monitor_exit(vm->constantDynamicMutex);
-			goto RETRY;
-		} else {
-			ramCPEntry->exception = vmThread->threadObject;
-		}
+
+		ramCPEntry->exception = vmThread->threadObject;
 		omrthread_monitor_exit(vm->constantDynamicMutex);
 
 		/* Enter if not previously resolved */
@@ -1943,7 +1947,21 @@ RETRY:
 		U_32 bsmIndex = romConstantRef->bsmIndexAndCpType >> J9DescriptionCpTypeShift;
 		J9ROMNameAndSignature* nameAndSig = SRP_PTR_GET(&romConstantRef->nameAndSignature, J9ROMNameAndSignature*);
 		J9MemoryManagerFunctions *gcFuncs = vm->memoryManagerFunctions;
+		U_16 cpIndex_16 = (U_16) cpIndex;
 
+		/* Cycle detection */
+		U_32 CPSize = romClass->ramConstantPoolCount;
+		/* Implement a stack array here to track visited status */
+		U_16 *visited = new U_16[CPSize];
+		int stackIndex = 0;
+		/* Implement a boolean array to check if cycle detection is resolved */
+		bool *resolvedArr = new bool[CPSize];
+		for (U_32 i = 0; i < CPSize; i++) {
+			resolvedArr[i] = false;
+		}
+		if (isCycleDetected(ramCP, bsmData, visited, cpIndex_16, resolvedArr, stackIndex)) {
+			setCurrentExceptionUTF(vmThread, J9VMCONSTANTPOOL_JAVALANGSTACKOVERFLOWERROR, "Cycle Detection error: Cycle detected.");
+		}
 		/* Walk bsmData */
 		for (U_32 i = 0; i < bsmIndex; i++) {
 			bsmData += bsmData[1] + 2;
@@ -1961,27 +1979,10 @@ RETRY:
 		j9object_t exceptionObject = NULL;
 		if (NULL != vmThread->currentException) {
 			/* Allocate the exception object in tenure */
-			exceptionObject = gcFuncs->j9gc_objaccess_asConstantPoolObject(
-											vmThread,
-											vmThread->currentException,
-											J9_GC_ALLOCATE_OBJECT_TENURED | J9_GC_ALLOCATE_OBJECT_NON_INSTRUMENTABLE);
-			if (NULL == exceptionObject) {
-				setHeapOutOfMemoryError(vmThread);
-				exceptionObject = vmThread->currentException;
-			}
+			exceptionObject = vmThread->currentException;
 		} else if (NULL == value) {
 			/* Java.lang.void is used as a special flag to indicate null reference */
 			exceptionObject = vm->voidReflectClass->classObject;
-		} else {
-			value = gcFuncs->j9gc_objaccess_asConstantPoolObject(
-									vmThread,
-									value,
-									J9_GC_ALLOCATE_OBJECT_TENURED | J9_GC_ALLOCATE_OBJECT_NON_INSTRUMENTABLE | J9_GC_ALLOCATE_OBJECT_HASHED);
-
-			if (NULL == value) {
-				setHeapOutOfMemoryError(vmThread);
-				exceptionObject = vmThread->currentException;
-			}
 		}
 
 		omrthread_monitor_enter(vm->constantDynamicMutex);
@@ -2049,4 +2050,45 @@ resolveInvokeDynamic(J9VMThread *vmThread, J9ConstantPool *ramCP, UDATA callSite
 	}
 
 	return methodHandle;
+}
+
+static bool
+isCycleDetected(J9ConstantPool *ramCP, U_16 *bsmDataOriginal, U_16 *visited, U_16 cpIndex, bool *resolved, int stackIndex)
+{
+    /* Check if the condy is resolved */
+    if (resolved[cpIndex] == true) {
+        return false;
+    }
+    /* Look through the stack to check if the condy is visited */
+    if (stackIndex > 0) {
+        for (int i = stackIndex - 1; i >= 0; i--) {
+            if (visited[i] == cpIndex) {
+                return true;
+            }
+        }
+    }
+    visited[stackIndex++] = cpIndex;
+    J9ROMConstantDynamicRef *romConstantRef = (J9ROMConstantDynamicRef*)(J9_ROM_CP_FROM_CP(ramCP) + cpIndex);
+    U_32 bsmIndex = romConstantRef->bsmIndexAndCpType >> J9DescriptionCpTypeShift;
+    U_16 *bsmData = bsmDataOriginal;
+    for (U_32 i = 0; i < bsmIndex; i++) {
+        bsmData += bsmData[1] + 2;
+    }
+    U_16 bsmArgCount = bsmData[1];
+    U_32 *bsmArgs = (U_32*) (bsmData + BSM_ARGUMENTS_OFFSET);
+
+    /* Check all bsm arguments for cycle detection */
+    for (U_16 i = 0; i < bsmArgCount; i++) {
+    	int bsmArgsIndex = i * BSM_ARGUMENT_SIZE;
+        U_16 index = bsmArgs[bsmArgsIndex];
+        U_16 cpType = J9_CP_TYPE(J9ROMCLASS_CPSHAPEDESCRIPTION(J9_CLASS_FROM_CP(ramCP)->romClass), index);
+        if (cpType == J9CPTYPE_CONSTANT_DYNAMIC) {
+            if (isCycleDetected(ramCP, bsmDataOriginal, visited, index, resolved, stackIndex)) {
+                return true;
+            }
+        }
+    }
+    stackIndex--;
+    resolved[cpIndex] = true;
+    return false;
 }

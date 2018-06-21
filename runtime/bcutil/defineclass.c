@@ -48,6 +48,9 @@ static BOOLEAN hasSamePackageName(J9ROMClass *anonROMClass, J9ROMClass *hostROMC
 static char* createErrorMessage(J9VMThread *vmStruct, J9ROMClass *anonROMClass, J9ROMClass *hostROMClass, const char* errorMsg);
 static void setIllegalArgumentExceptionHostClassAnonClassHaveDifferentPackages(J9VMThread *vmStruct, J9ROMClass *anonROMClass, J9ROMClass *hostROMClass);
 static void freeAnonROMClass(J9JavaVM *vm, J9ROMClass *romClass);
+extern void breakPoint(){
+	printf("breakPoint() executed.\n");
+}
 
 #define GET_CLASS_LOADER_FROM_ID(vm, classLoader) ((classLoader) != NULL ? (classLoader) : (vm)->systemClassLoader)
 
@@ -85,6 +88,10 @@ internalDefineClass(
 	Trc_BCU_internalDefineClass_FullData(vmThread, classDataLength, classData, classLoader);
 
 	classLoader = GET_CLASS_LOADER_FROM_ID(vm, classLoader);
+
+	if ((className != NULL) && (0 == strncmp( (char*) className , "A", sizeof("A")))) {
+		breakPoint();
+	}
 
 	/* remember the current classpath entry so we can record it at the end */
 	vmThread->privateFlags &= ~J9_PRIVATE_FLAGS_CLOAD_NO_MEM;

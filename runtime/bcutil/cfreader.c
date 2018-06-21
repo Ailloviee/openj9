@@ -1141,7 +1141,7 @@ readPool(J9CfrClassFile* classfile, U_8* data, U_8* dataEnd, U_8* segment, U_8* 
 			break;
 
 		case CFR_CONSTANT_Dynamic:
-			if (classfile->majorVersion < 55) {
+			if (classfile->majorVersion < 51) {
 				errorCode = J9NLS_CFR_ERR_CP_ENTRY_INVALID_BEFORE_V55__ID;
 				offset = (U_32) (index - data - 1);
 				goto _errorFound;
@@ -2158,8 +2158,7 @@ checkClassVersion(J9CfrClassFile* classfile, U_8* segment, U_32 vmVersionShifted
 {
 	U_32 errorCode = J9NLS_CFR_ERR_MAJOR_VERSION__ID;
 	U_32 offset = 6;
-	U_16 max_allowed_version = vmVersionShifted >> BCT_MajorClassFileVersionMaskShift;
-
+	U_16 max_allowed_version = 55;
 	/* Support versions 45.0 -> <whatever is legal for this VM> */
 	if((classfile->majorVersion >= 45) && (classfile->majorVersion <= max_allowed_version)) {
 		/* check minor version numbers */
