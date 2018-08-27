@@ -22,6 +22,7 @@
 package com.ibm.j9ddr.vm29.tools.ddrinteractive.commands;
 
 import java.io.PrintStream;
+import java.util.Iterator;
 
 import com.ibm.j9ddr.CorruptDataException;
 import com.ibm.j9ddr.tools.ddrinteractive.Command;
@@ -33,6 +34,9 @@ import com.ibm.j9ddr.vm29.j9.DataType;
 import com.ibm.j9ddr.vm29.j9.ObjectModel;
 import com.ibm.j9ddr.vm29.j9.Pool;
 import com.ibm.j9ddr.vm29.j9.SlotIterator;
+import com.ibm.j9ddr.vm29.j9.walkers.ClassIterator;
+import com.ibm.j9ddr.vm29.pointer.AbstractPointer;
+import com.ibm.j9ddr.vm29.pointer.SelfRelativePointer;
 import com.ibm.j9ddr.vm29.pointer.VoidPointer;
 import com.ibm.j9ddr.vm29.pointer.generated.J9BuildFlags;
 import com.ibm.j9ddr.vm29.pointer.generated.J9ClassLoaderPointer;
@@ -43,6 +47,7 @@ import com.ibm.j9ddr.vm29.pointer.generated.J9ObjectPointer;
 import com.ibm.j9ddr.vm29.pointer.generated.J9PoolPointer;
 import com.ibm.j9ddr.vm29.pointer.generated.J9ROMClassPointer;
 import com.ibm.j9ddr.vm29.pointer.generated.J9UTF8Pointer;
+import com.ibm.j9ddr.vm29.pointer.helper.J9ClassHelper;
 import com.ibm.j9ddr.vm29.pointer.helper.J9ClassLoaderHelper;
 import com.ibm.j9ddr.vm29.pointer.helper.J9ObjectHelper;
 import com.ibm.j9ddr.vm29.pointer.helper.J9RASHelper;
@@ -57,9 +62,9 @@ import com.ibm.j9ddr.vm29.types.U16;
  * !getnest 0x0000000001919400
  *   
  * Example output: 
- * NestHost: 
+ * Nest host: 
  * ClassIsOwnNestHost !j9class 0x0000000001919400* 
- * NestMembers:
+ * Nest members:
  * 
  */
 public class GetNestCommand extends Command 
@@ -88,33 +93,37 @@ public class GetNestCommand extends Command
 
 				if (romClass.nestHost() == VoidPointer.NULL) {
 					/* If the class has NULL nest host, it is its own nest host */
-					out.printf("NestHost:\n" + "*%s !j9class %s*\nNestMembers:\n", name, hexAddress);
+					out.printf("Nest host:%n" + "*%s !j9class %s*%nNest members:%n", name, hexAddress);
 					printNestMembers(romClass, classLoader, name, nestMemberCount, out);
 				} else {
+					J9UTF8Pointer nestHost = J9UTF8Pointer.cast(romClass.nestHost());
+					String nestHostName = J9UTF8Helper.stringValue(nestHost);
+					String nestHostSignature = "L" + nestHostName + ";";
+					J9ClassPointer hostClass = J9ClassLoaderHelper.findClass(classLoader, nestHostSignature);
+					String hostClassAddr = "Class Not Loaded";
 					/* The class cannot have both nest host and nest members */
 					if (nestMemberCount != 0) {
-						out.printf("Error: class has both nest host and nest members:\n*%s !j9class %s*\n", name,
+						out.printf("Error: class has both nest host and nest members:%n*%s !j9class %s*%n", name,
+								hexAddress);
+						if (hostClass != null) {
+							hostClassAddr = hostClass.getHexAddress();
+						}
+						out.printf("Nest host:%n" + "*%s !j9class %s*%nNest members:%n", nestHostName, hostClassAddr);
+						printNestMembers(romClass, classLoader, name, nestMemberCount, out);
+					} else if (nestHostName.matches(name)) {
+						/* The class is its own nest host */
+						out.printf("Nest host:%n" + "*%s !j9class %s*%nNest members:%nThere are no nest members.%n", name,
 								hexAddress);
 					} else {
-						J9UTF8Pointer nestHost = J9UTF8Pointer.cast(romClass.nestHost());
-						String nestHostName = J9UTF8Helper.stringValue(nestHost);
-						if (nestHostName.matches(name)) {
-							/* The class is its own nest host */
-							out.printf("NestHost:\n" + "*%s !j9class %s*\nNestMembers:\nThere are no nest members\n", name, hexAddress);
-						} else {
-							J9ClassPointer hostClass = J9ClassLoaderHelper.findClass(classLoader, nestHostName);
-							String hostClassAddr = "Class Not Loaded";
-							J9ROMClassPointer hostRomClass = null;
-							long hostNestMemberCount = -1;
-							if (hostClass != null) {
-								hostClassAddr = hostClass.getHexAddress();
-								hostRomClass = hostClass.romClass();
-								hostNestMemberCount = hostRomClass.nestMemberCount().longValue();
-							}
-							out.printf("NestHost:\n" + " %s !j9class %s\nNestMembers:\n", nestHostName, hostClassAddr);
-							out.printf("*%s !j9class %s*\n", name, hexAddress);
-							printNestMembers(hostRomClass, classLoader, name, hostNestMemberCount, out);
+						J9ROMClassPointer hostRomClass = null;
+						long hostNestMemberCount = -1;
+						if (hostClass != null) {
+							hostClassAddr = hostClass.getHexAddress();
+							hostRomClass = hostClass.romClass();
+							hostNestMemberCount = hostRomClass.nestMemberCount().longValue();
 						}
+						out.printf("Nest host:%n" + " %s !j9class %s%nNest members:%n", nestHostName, hostClassAddr);
+						printNestMembers(hostRomClass, classLoader, name, hostNestMemberCount, out);
 					}
 				}
 			}
@@ -141,29 +150,34 @@ public class GetNestCommand extends Command
 	 * @param nestMemberCount The number of nest members to be printed
 	 * @param out The PrintStream that the Nest Members prints to
 	 */
-	private void printNestMembers(J9ROMClassPointer romClass, J9ClassLoaderPointer classLoader, String name, long nestMemberCount, PrintStream out)
-	{
+	private void printNestMembers(J9ROMClassPointer romClass, J9ClassLoaderPointer classLoader, String name,
+			long nestMemberCount, PrintStream out) throws DDRInteractiveCommandException {
 		if (nestMemberCount == -1) {
-			out.printf("Host class is not loaded, cannot access its nest members\n");
+			out.printf("Host class is not loaded, cannot access its nest members.%n");
 		} else if (nestMemberCount == 0) {
-			out.printf("There are no nest members");
+			out.printf("There are no nest members.%n");
 		} else {
-			J9UTF8Pointer nestMembers = J9UTF8Pointer.cast(romClass.nestMembers());
-			for (long i = 0; i < nestMemberCount; ++i) {
-				String nestMemberName = J9UTF8Helper.stringValue(nestMembers);
-				J9ClassPointer memberClass = J9ClassLoaderHelper.findClass(classLoader, nestMemberName);
-				String memberClassAddr = "Class Not Loaded";
-				if (memberClass != null) {
-					memberClassAddr = memberClass.getHexAddress();
+			try {
+				SelfRelativePointer nestMembers = SelfRelativePointer.cast((AbstractPointer) romClass.nestMembers());
+				for (long i = 0; i < nestMemberCount; ++i) {
+					J9UTF8Pointer nestMemberNamePtr = J9UTF8Pointer.cast(nestMembers.get());
+					String nestMemberName = J9UTF8Helper.stringValue(nestMemberNamePtr);
+					String nestMemberSignature = "L" + nestMemberName + ";";
+					J9ClassPointer memberClass = J9ClassLoaderHelper.findClass(classLoader, nestMemberSignature);
+					String memberClassAddr = "Class Not Loaded";
+					if (memberClass != null) {
+						memberClassAddr = memberClass.getHexAddress();
+					}
+					if (nestMemberName.matches(name)) {
+						out.printf("*%s !j9class %s*%n", nestMemberName, memberClassAddr);
+					} else {
+						out.printf(" %s !j9class %s%n", nestMemberName, memberClassAddr);
+					}
+					nestMembers = nestMembers.add(1);
 				}
-				if (nestMemberName.matches(name)) {
-					out.printf("*%s !j9class %s*\n", nestMemberName, memberClassAddr);
-				} else {
-					out.printf(" %s !j9class %s\n", nestMemberName, memberClassAddr);
-				}
-				nestMembers.add(1);
+			} catch (CorruptDataException e) {
+				throw new DDRInteractiveCommandException(e);
 			}
 		}
 	}
 }
-

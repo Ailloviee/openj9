@@ -25,6 +25,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 
 import com.ibm.j9ddr.CorruptDataException;
+import com.ibm.j9ddr.tools.ddrinteractive.DDRInteractiveCommandException;
 import com.ibm.j9ddr.vm29.events.EventManager;
 import com.ibm.j9ddr.vm29.j9.DataType;
 import com.ibm.j9ddr.vm29.j9.walkers.ClassIterator;
